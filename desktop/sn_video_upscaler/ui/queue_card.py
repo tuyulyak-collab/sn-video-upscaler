@@ -1,8 +1,8 @@
-"""Video queue card (placeholder for PR #1).
+"""Video queue card.
 
-Currently shows a drop zone, file list, and Add/Remove/Clear buttons.
-The list is a plain `list[str]` of file paths since the upload/process
-state machine — and the real `Job` dataclass — land in PR #5/#6.
+Currently shows a tighter empty state (icon + helper) and only reveals
+the file list once videos are queued. Real upload state arrives in
+PR #5/#6.
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ class QueueCard(GlassCard):
         self.header.add_right_widget(self.queue_pill)
         layout.addWidget(self.header)
 
-        # Top row: action buttons
+        # Top row: action buttons.
         top_row = QHBoxLayout()
         top_row.setContentsMargins(0, 0, 0, 0)
         top_row.setSpacing(10)
@@ -64,16 +64,18 @@ class QueueCard(GlassCard):
         top_row.addStretch(1)
         layout.addLayout(top_row)
 
-        # Drop zone
+        # Drop zone (custom widget with the cloud-upload empty state).
         self.drop_zone = DropZone()
         self.drop_zone.files_dropped.connect(self._on_files_dropped)
         self.drop_zone.clicked.connect(self._on_add_clicked)
         layout.addWidget(self.drop_zone)
 
-        # File list
+        # File list — hidden when empty so the empty state doesn't feel
+        # oversized.
         self.list_widget = QListWidget()
         self.list_widget.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
-        self.list_widget.setMinimumHeight(140)
+        self.list_widget.setMinimumHeight(150)
+        self.list_widget.setVisible(False)
         layout.addWidget(self.list_widget)
 
         self._enabled = False
@@ -85,9 +87,10 @@ class QueueCard(GlassCard):
         self.add_button.setEnabled(enabled)
         self.drop_zone.setEnabled(enabled)
         self.list_widget.setEnabled(enabled)
+        self.remove_button.setEnabled(enabled and self.list_widget.count() > 0)
+        self.clear_button.setEnabled(enabled and self.list_widget.count() > 0)
         if helper_text is not None:
             self.header.set_helper(helper_text)
-        self.setProperty("disabledLook", not enabled)
 
     def render_paths(self, paths: list[str]) -> None:
         self.list_widget.blockSignals(True)
@@ -95,7 +98,10 @@ class QueueCard(GlassCard):
         for path in paths:
             self.list_widget.addItem(QListWidgetItem(self._format_path_label(path)))
         self.list_widget.blockSignals(False)
+        self.list_widget.setVisible(bool(paths))
         self.queue_pill.set_state("queued", f"{len(paths)} in queue")
+        self.remove_button.setEnabled(self._enabled and bool(paths))
+        self.clear_button.setEnabled(self._enabled and bool(paths))
 
     def selected_indexes(self) -> list[int]:
         return sorted(
