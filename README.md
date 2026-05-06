@@ -3,10 +3,10 @@
 Windows desktop app that upscales videos with **Google Colab GPU** —
 a friendly EXE on your PC, the heavy GPU work in Colab.
 
-This repo is being built up in small, reviewable PRs. **You are looking
-at the result of PR #1 — the desktop app skeleton only.** The cards and
-buttons are placeholders; actual Colab connection, upload/download, and
-EXE packaging arrive in later PRs.
+This repo is being built up in small, reviewable PRs. **PR #1 + PR #2**
+landed the desktop app skeleton + final UI/UX. **PR #3A** adds the
+Google Colab worker notebook foundation (boot + GPU check + `/health`
+endpoint). Real upload / processing / download lands in PR #3B + #4 + #5/6.
 
 ![PR #1 skeleton — main window](docs/screenshot.png)
 
@@ -37,16 +37,18 @@ EXE packaging arrive in later PRs.
 - **Smoke tests** (`tests/test_skeleton.py`).
 - **`docs/screenshot.png`** of the running skeleton.
 
-## Roadmap (next PRs)
+## Roadmap
 
-- **PR #2** — Final UI/UX polish to match the Gemini/Canvas reference.
-- **PR #3** — Google Colab worker notebook (`colab/sn_video_upscaler_colab_worker.ipynb`).
+- ~~**PR #1** — Project setup + Windows desktop app skeleton.~~
+- ~~**PR #2** — Final UI/UX polish (premium glassmorphism, hero Connect card).~~
+- ~~**PR #3A** — Google Colab worker notebook foundation (`/health`).~~
+- **PR #3B** — Real-ESRGAN install + single-video pipeline (`/upscale`, `/status`, `/download`).
 - **PR #4** — Desktop ↔ Colab connection (auto-discovery via ntfy.sh).
-- **PR #5** — Single video upload → process → download.
+- **PR #5** — Single video upload → process → download (desktop side).
 - **PR #6** — Batch queue, one-by-one.
 - **PR #7** — Polish, error handling, Windows EXE packaging, README, QA.
 
-## Run from source
+## Run the desktop app from source
 
 Requires Python 3.10+.
 
@@ -73,9 +75,23 @@ python -m sn_video_upscaler.main
 ### Lint and tests
 
 ```bash
-ruff check desktop tests
+ruff check desktop tests scripts
 pytest tests
 ```
+
+## Run the Colab worker (PR #3A)
+
+The notebook lives at `colab/sn_video_upscaler_colab_worker.ipynb`.
+Full instructions are in [`colab/README.md`](colab/README.md). TL;DR:
+
+1. Open the notebook in Google Colab.
+2. Runtime → Change runtime type → **GPU** → Save → Connect.
+3. Run the *Setup* cells, then *Start Worker*.
+4. The cell prints a `https://*.trycloudflare.com` URL.
+5. Verify with `curl <url>/health`.
+
+The `.ipynb` is generated from `colab/source/notebook.py`. Re-run
+`python scripts/build_notebook.py` after edits.
 
 ## What's still placeholder
 
@@ -104,16 +120,23 @@ desktop/sn_video_upscaler/
 ├── settings.py
 └── ui/
     ├── widgets.py        # GradientBackground, GlassCard, StatusPill, DropZone, ...
-    ├── main_window.py    # Composes the cards (placeholder wiring)
-    ├── colab_card.py     # Connect Google Colab (placeholder state machine)
+    ├── main_window.py    # Composes the cards
+    ├── colab_card.py     # Connect Google Colab
     ├── queue_card.py     # Videos (drag-drop, list, add/remove/clear)
     ├── preset_card.py    # Quality preset (Fast 2×, High Quality 4×, Anime)
     ├── start_card.py     # Run controls
     └── progress_card.py  # Bars + counts + activity line
+colab/
+├── sn_video_upscaler_colab_worker.ipynb   # generated notebook
+├── source/notebook.py                     # source (cell markers)
+└── README.md
+scripts/
+└── build_notebook.py     # converts source/notebook.py -> .ipynb
 docs/
-└── screenshot.png        # PR #1 main window
+└── screenshot.png        # main window
 tests/
-└── test_skeleton.py      # smoke tests
+├── test_skeleton.py      # desktop smoke tests
+└── test_notebook.py      # notebook structure tests
 pyproject.toml
 README.md
 ```
