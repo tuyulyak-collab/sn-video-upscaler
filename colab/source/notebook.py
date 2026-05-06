@@ -71,10 +71,9 @@ DISCOVERY_BASE = "https://ntfy.sh"  # used by PR #4 to publish the URL
 # ## 2. Install dependencies
 #
 # - **FFmpeg** is pre-installed on Colab — we just verify it.
-# - **Python packages** for the temporary worker: `fastapi`,
-#   `uvicorn[standard]`, `nest_asyncio` (so we can run uvicorn from
-#   inside the notebook), and `requests` (for publishing the worker URL
-#   in PR #4).
+# - **Python packages** for the temporary worker: `fastapi`, plain
+#   `uvicorn` (no `[standard]` — uvloop conflicts with our threaded
+#   startup), and `requests` (for publishing the worker URL in PR #4).
 # - **cloudflared** gives us a public HTTPS URL into the Colab runtime.
 #
 # Real-ESRGAN / Torch installation is intentionally **deferred to PR #3B**
@@ -279,8 +278,9 @@ def _serve() -> None:
             access_log=False,
             # Force the stdlib asyncio loop. If `uvloop` is present in the
             # runtime image, uvicorn would auto-detect and use it, which
-            # would then break `nest_asyncio` (used by other notebook code)
-            # and prevent us from running uvicorn in this background thread.
+            # makes the loop unpatchable by nest_asyncio (used elsewhere
+            # in Colab) and breaks `Server.run()` from this background
+            # thread.
             loop="asyncio",
         )
         server = uvicorn.Server(config)
@@ -314,9 +314,7 @@ for _ in range(60):  # up to 15 seconds
 
 if _serve_error:
     print("Uvicorn failed to start:")
-    traceback.print_exception(
-        type(_serve_error[0]), _serve_error[0], _serve_error[0].__traceback__
-    )
+    traceback.print_exception(_serve_error[0])
     raise _serve_error[0]
 if not _local_ok:
     raise RuntimeError(
@@ -328,6 +326,16 @@ print(f"Local worker is up on http://127.0.0.1:{WORKER_PORT_ACTIVE}")
 
 
 # Bring up the cloudflared tunnel and capture the public URL.
+# If a previous run of this cell already spawned a tunnel, terminate it
+# first so we don't leave orphaned cloudflared processes behind.
+_existing_tunnel = globals().get("_tunnel")
+if _existing_tunnel is not None and _existing_tunnel.poll() is None:
+    try:
+        _existing_tunnel.terminate()
+        _existing_tunnel.wait(timeout=5)
+    except (subprocess.TimeoutExpired, OSError):
+        _existing_tunnel.kill()
+
 _tunnel_log = Path("/tmp/cloudflared.log")
 if _tunnel_log.exists():
     _tunnel_log.unlink()
@@ -401,9 +409,16 @@ if PAIRING_CODE:
 # worker thread is a daemon — it goes away when the runtime shuts down.
 
 # %%
-try:
-    _tunnel.terminate()
-    _tunnel.wait(timeout=5)
-    print("Cloudflared tunnel stopped.")
-except Exception as exc:
-    print(f"Could not terminate cloudflared: {exc}")
+_tunnel_to_stop = globals().get("_tunnel")
+if _tunnel_to_stop is None:
+    print("No tunnel to stop — run *Start Worker* first.")
+elif _tunnel_to_stop.poll() is not None:
+    print("Tunnel already stopped.")
+else:
+    try:
+        _tunnel_to_stop.terminate()
+        _tunnel_to_stop.wait(timeout=5)
+        print("Cloudflared tunnel stopped.")
+    except subprocess.TimeoutExpired:
+        _tunnel_to_stop.kill()
+        print("Cloudflared tunnel did not exit cleanly — killed.")
