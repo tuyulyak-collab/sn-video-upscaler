@@ -97,11 +97,13 @@ if shutil.which("ffmpeg") is None:
     _run(["apt-get", "install", "-y", "-qq", "ffmpeg"])
 print("FFmpeg:", shutil.which("ffmpeg"))
 
-# Worker dependencies.
+# Worker dependencies. Plain `uvicorn` (not `uvicorn[standard]`) — uvloop
+# is fragile when combined with `nest_asyncio.apply()` and the Colab event
+# loop, and we don't need its perf for a low-traffic worker.
 _run([
     sys.executable, "-m", "pip", "install", "-q",
     "fastapi==0.115.5",
-    "uvicorn[standard]==0.32.0",
+    "uvicorn==0.32.0",
     "nest_asyncio==1.6.0",
     "requests==2.32.3",
 ])
@@ -186,7 +188,8 @@ for sub in SUBDIRS:
 #
 # 1. Defines a tiny **FastAPI app** with a single `GET /health` endpoint
 #    that reports GPU availability + worker readiness.
-# 2. Starts `uvicorn` on `127.0.0.1:8000` in a background thread.
+# 2. Starts `uvicorn` in a background thread on a free port (starts at
+#    `WORKER_PORT` and walks up if it's already taken).
 # 3. Boots a **cloudflared** tunnel pointing at the local worker, and
 #    waits for the public `https://*.trycloudflare.com` URL to appear
 #    in the tunnel logs.
@@ -197,14 +200,18 @@ for sub in SUBDIRS:
 # time — that's expected.
 
 # %%
+import asyncio
 import json
 import re
+import socket
 import threading
 import time
+import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
 import nest_asyncio
+import requests as _requests
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
@@ -235,38 +242,87 @@ def health() -> JSONResponse:
     })
 
 
-# Allow uvicorn.run() to coexist with the running notebook event loop.
+# Allow uvicorn to run alongside Colab's event loop.
 nest_asyncio.apply()
 
 
+def _port_is_free(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind(("127.0.0.1", port))
+        except OSError:
+            return False
+    return True
+
+
+# Pick the first free port in the WORKER_PORT..+10 range so the cell can
+# be re-run without "address already in use" from a previous attempt.
+WORKER_PORT_ACTIVE = WORKER_PORT
+for _candidate in range(WORKER_PORT, WORKER_PORT + 10):
+    if _port_is_free(_candidate):
+        WORKER_PORT_ACTIVE = _candidate
+        break
+if WORKER_PORT_ACTIVE != WORKER_PORT:
+    print(f"Port {WORKER_PORT} busy, using {WORKER_PORT_ACTIVE} instead.")
+
+# Capture any exception raised inside the uvicorn thread so the user
+# actually sees what went wrong instead of a generic timeout.
+_serve_error: list[BaseException] = []
+
+
 def _serve() -> None:
-    config = uvicorn.Config(
-        app, host="127.0.0.1", port=WORKER_PORT, log_level="warning"
-    )
-    server = uvicorn.Server(config)
-    server.run()
+    try:
+        # A fresh thread needs its own event loop.
+        asyncio.set_event_loop(asyncio.new_event_loop())
+        config = uvicorn.Config(
+            app,
+            host="127.0.0.1",
+            port=WORKER_PORT_ACTIVE,
+            log_level="warning",
+            access_log=False,
+        )
+        server = uvicorn.Server(config)
+        # Signal handlers can only be installed from the main thread; this
+        # background thread isn't, so disable them. Otherwise uvicorn raises
+        # ValueError("signal only works in main thread...").
+        server.install_signal_handlers = lambda: None  # type: ignore[assignment]
+        server.run()
+    except BaseException as exc:  # noqa: BLE001 — surface any failure
+        _serve_error.append(exc)
 
 
 _server_thread = threading.Thread(target=_serve, daemon=True)
 _server_thread.start()
 
 # Wait until the local worker answers /health before bringing up the tunnel.
-import requests as _requests
-
 _local_ok = False
-for _ in range(40):
+for _ in range(60):  # up to 15 seconds
+    if _serve_error:
+        break
     try:
-        r = _requests.get(f"http://127.0.0.1:{WORKER_PORT}/health", timeout=1.0)
+        r = _requests.get(
+            f"http://127.0.0.1:{WORKER_PORT_ACTIVE}/health", timeout=1.0
+        )
         if r.status_code == 200:
             _local_ok = True
             break
     except _requests.RequestException:
         pass
     time.sleep(0.25)
-if not _local_ok:
-    raise RuntimeError(f"Local worker did not come up on port {WORKER_PORT}.")
 
-print(f"Local worker is up on http://127.0.0.1:{WORKER_PORT}")
+if _serve_error:
+    print("Uvicorn failed to start:")
+    traceback.print_exception(
+        type(_serve_error[0]), _serve_error[0], _serve_error[0].__traceback__
+    )
+    raise _serve_error[0]
+if not _local_ok:
+    raise RuntimeError(
+        f"Local worker did not come up on port {WORKER_PORT_ACTIVE}. "
+        "Try Runtime > Restart runtime, then re-run all cells."
+    )
+
+print(f"Local worker is up on http://127.0.0.1:{WORKER_PORT_ACTIVE}")
 
 
 # Bring up the cloudflared tunnel and capture the public URL.
@@ -278,7 +334,7 @@ _tunnel = subprocess.Popen(
     [
         "cloudflared", "tunnel",
         "--no-autoupdate",
-        "--url", f"http://127.0.0.1:{WORKER_PORT}",
+        "--url", f"http://127.0.0.1:{WORKER_PORT_ACTIVE}",
         "--logfile", str(_tunnel_log),
     ],
     stdout=subprocess.DEVNULL,
