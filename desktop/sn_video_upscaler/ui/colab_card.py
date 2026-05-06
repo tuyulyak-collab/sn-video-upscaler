@@ -1,19 +1,25 @@
-"""Connect Google Colab card (placeholder for PR #1).
+"""Connect Google Colab card — hero treatment for PR #2.
 
 The real connection logic (auto-discovery via ntfy.sh, /health probing,
-status transitions) lands in PR #4. This skeleton just renders the card,
-emits signals for clicks, and exposes a minimal `set_state(...)` so the
-rest of the app can drive it once the connection layer arrives.
+status transitions) lands in PR #4. This card emits signals for clicks
+and exposes a minimal `set_state(...)` so the rest of the app can drive
+it once the connection layer arrives.
 """
 
 from __future__ import annotations
 
 import webbrowser
 
-from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
-from .widgets import CardHeader, GhostButton, GlassCard, PrimaryButton, StatusPill
+from .widgets import (
+    CardHeader,
+    GhostButton,
+    GlassCard,
+    PrimaryButton,
+    StatusPill,
+)
 
 
 class ColabConnectionCard(GlassCard):
@@ -21,47 +27,62 @@ class ColabConnectionCard(GlassCard):
     check_connection_clicked = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
+        super().__init__(parent, variant=GlassCard.HERO)
 
         layout = self.layout_v()
+        layout.setSpacing(18)
 
         self.header = CardHeader(
             "Connect Google Colab",
             "SN Video Upscaler uses Google Colab GPU to process your videos faster. "
             "Open Colab, start the worker, then return here.",
+            title_object_name="HeroTitle",
         )
         self.status_pill = StatusPill("Waiting for Colab", state="waiting")
         self.header.add_right_widget(self.status_pill)
         layout.addWidget(self.header)
 
-        # Pairing code row
-        pairing_row = QHBoxLayout()
-        pairing_row.setContentsMargins(0, 0, 0, 0)
-        pairing_row.setSpacing(8)
-        pair_label = QLabel("Pairing code")
-        pair_label.setObjectName("Subtle")
-        pairing_row.addWidget(pair_label)
+        # Pairing code chip — pretty card-within-card so it feels intentional.
+        chip_row = QHBoxLayout()
+        chip_row.setContentsMargins(0, 4, 0, 4)
+        chip_row.setSpacing(12)
+
+        chip_box = QVBoxLayout()
+        chip_box.setSpacing(4)
+        chip_box.setContentsMargins(0, 0, 0, 0)
+        pair_label = QLabel("Your pairing code")
+        pair_label.setObjectName("PairingLabel")
+        chip_box.addWidget(pair_label)
         self.pairing_code_label = QLabel("—")
-        self.pairing_code_label.setObjectName("H3")
-        self.pairing_code_label.setStyleSheet(
-            "QLabel { background-color: rgba(255, 255, 255, 0.85); "
-            "border: 1px solid rgba(120, 110, 180, 0.18); border-radius: 10px; "
-            "padding: 4px 10px; letter-spacing: 1.5px; "
-            "font-family: 'Cascadia Code', 'Consolas', monospace; }"
+        self.pairing_code_label.setObjectName("PairingCode")
+        self.pairing_code_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.pairing_code_label.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
         )
-        pairing_row.addWidget(self.pairing_code_label)
-        pairing_row.addStretch(1)
+        chip_box.addWidget(self.pairing_code_label)
+        chip_row.addLayout(chip_box)
+
+        chip_help = QLabel(
+            "Paste this code into the Colab notebook so it can publish "
+            "its temporary worker URL back to you. The pairing code is "
+            "rotated every session — never share it."
+        )
+        chip_help.setObjectName("Subtle")
+        chip_help.setWordWrap(True)
+        chip_help.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        chip_row.addWidget(chip_help, stretch=1)
+        layout.addLayout(chip_row)
+
         self.message_label = QLabel("")
         self.message_label.setObjectName("Helper")
         self.message_label.setWordWrap(True)
-        layout.addLayout(pairing_row)
-
         layout.addWidget(self.message_label)
 
-        # Buttons
+        # Buttons — primary leads, ghost follows; right side stays empty so
+        # the hero card feels balanced.
         button_row = QHBoxLayout()
         button_row.setContentsMargins(0, 0, 0, 0)
-        button_row.setSpacing(10)
+        button_row.setSpacing(12)
         self.open_button = PrimaryButton("Open Colab Notebook")
         self.check_button = GhostButton("Check Connection")
         button_row.addWidget(self.open_button)

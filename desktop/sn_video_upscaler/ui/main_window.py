@@ -1,4 +1,4 @@
-"""Main application window — composes all cards (PR #1 skeleton).
+"""Main application window — composes all cards.
 
 Wiring to a real Colab connection manager and queue worker happens in
 later PRs. For now the buttons emit signals into a small in-window list
@@ -30,7 +30,11 @@ from .preset_card import PresetCard
 from .progress_card import ProgressCard
 from .queue_card import QueueCard
 from .start_card import StartCard
-from .widgets import GhostButton, GradientBackground, IconButton
+from .widgets import (
+    GradientBackground,
+    HeaderPillButton,
+    IconButton,
+)
 
 
 class MainWindow(QMainWindow):
@@ -44,13 +48,13 @@ class MainWindow(QMainWindow):
         self._files: list[str] = []
         self._activity_log: deque[str] = deque(maxlen=200)
 
-        # Background widget hosts the gradient + glow.
+        # Background widget hosts the layered atmospheric gradient.
         self.background = GradientBackground()
         self.setCentralWidget(self.background)
 
         outer = QVBoxLayout(self.background)
-        outer.setContentsMargins(28, 22, 28, 22)
-        outer.setSpacing(18)
+        outer.setContentsMargins(36, 28, 36, 24)
+        outer.setSpacing(20)
         outer.addLayout(self._build_header())
 
         # Scrollable cards area. The transparent stylesheet must be scoped
@@ -74,8 +78,8 @@ class MainWindow(QMainWindow):
         cards_host.setAutoFillBackground(False)
         cards_host.setStyleSheet("QWidget#CardsHost { background: transparent; }")
         cards_layout = QVBoxLayout(cards_host)
-        cards_layout.setContentsMargins(0, 0, 0, 0)
-        cards_layout.setSpacing(18)
+        cards_layout.setContentsMargins(0, 0, 0, 4)
+        cards_layout.setSpacing(20)
 
         self.colab_card = ColabConnectionCard()
         self.colab_card.set_pairing_code(self.settings.pairing_code)
@@ -87,7 +91,7 @@ class MainWindow(QMainWindow):
         self.queue_card = QueueCard()
         self.queue_card.set_enabled(
             False,
-            "Connect Google Colab first to add videos. (PR #1: cards are placeholder.)",
+            "Connect Google Colab first to add videos.",
         )
 
         self.preset_card = PresetCard()
@@ -109,10 +113,14 @@ class MainWindow(QMainWindow):
         scroll.setWidget(cards_host)
         outer.addWidget(scroll, stretch=1)
 
-        # Footer
-        footer = QLabel("PR #1 skeleton — controllers and Colab worker arrive in later PRs.")
+        # Footer (subtle, off-axis from main flow).
+        footer_row = QHBoxLayout()
+        footer_row.setContentsMargins(2, 0, 2, 0)
+        footer = QLabel("UI preview — backend services arrive in later PRs.")
         footer.setObjectName("Muted")
-        outer.addWidget(footer)
+        footer_row.addWidget(footer)
+        footer_row.addStretch(1)
+        outer.addLayout(footer_row)
 
         self._wire_signals()
 
@@ -120,10 +128,10 @@ class MainWindow(QMainWindow):
     def _build_header(self) -> QHBoxLayout:
         row = QHBoxLayout()
         row.setContentsMargins(2, 4, 2, 4)
-        row.setSpacing(10)
+        row.setSpacing(12)
 
         title_box = QVBoxLayout()
-        title_box.setSpacing(0)
+        title_box.setSpacing(2)
         title = QLabel(__app_name__)
         title.setObjectName("H1")
         subtitle = QLabel(__app_subtitle__)
@@ -133,11 +141,13 @@ class MainWindow(QMainWindow):
         row.addLayout(title_box)
         row.addStretch(1)
 
-        self.output_button = GhostButton("Output Folder")
+        # Output Folder shortcut as a soft pill with a folder glyph.
+        self.output_button = HeaderPillButton("📁  Output Folder")
         self.output_button.clicked.connect(self._open_output_folder)
         row.addWidget(self.output_button)
 
-        self.settings_button = IconButton("⚙")
+        # Settings cog as a circular icon button.
+        self.settings_button = IconButton("⚙", tooltip="Settings")
         self.settings_button.clicked.connect(self._open_settings_placeholder)
         row.addWidget(self.settings_button)
 
@@ -216,7 +226,7 @@ class MainWindow(QMainWindow):
             self,
             "Settings",
             "The full Settings dialog (general + Advanced/Troubleshooting) "
-            "ships in a later PR. PR #1 is a placeholder skeleton.",
+            "ships in a later PR.",
         )
 
     # ---- helpers ----
