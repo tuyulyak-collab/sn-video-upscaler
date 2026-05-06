@@ -4,9 +4,10 @@ Windows desktop app that upscales videos with **Google Colab GPU** —
 a friendly EXE on your PC, the heavy GPU work in Colab.
 
 This repo is being built up in small, reviewable PRs. **PR #1 + PR #2**
-landed the desktop app skeleton + final UI/UX. **PR #3A** adds the
-Google Colab worker notebook foundation (boot + GPU check + `/health`
-endpoint). Real upload / processing / download lands in PR #3B + #4 + #5/6.
+landed the desktop app skeleton + final UI/UX. **PR #3A + PR #3B** add
+the Google Colab worker notebook (foundation + Real-ESRGAN single-video
+pipeline). Desktop integration arrives in PR #4 + #5; batch queueing
+in PR #6; EXE packaging + final QA in PR #7.
 
 ![PR #1 skeleton — main window](docs/screenshot.png)
 
@@ -42,7 +43,7 @@ endpoint). Real upload / processing / download lands in PR #3B + #4 + #5/6.
 - ~~**PR #1** — Project setup + Windows desktop app skeleton.~~
 - ~~**PR #2** — Final UI/UX polish (premium glassmorphism, hero Connect card).~~
 - ~~**PR #3A** — Google Colab worker notebook foundation (`/health`).~~
-- **PR #3B** — Real-ESRGAN install + single-video pipeline (`/upscale`, `/status`, `/download`).
+- ~~**PR #3B** — Real-ESRGAN install + single-video pipeline (`/upscale`, `/status`, `/download`).~~
 - **PR #4** — Desktop ↔ Colab connection (auto-discovery via ntfy.sh).
 - **PR #5** — Single video upload → process → download (desktop side).
 - **PR #6** — Batch queue, one-by-one.
@@ -79,16 +80,22 @@ ruff check desktop tests scripts
 pytest tests
 ```
 
-## Run the Colab worker (PR #3A)
+## Run the Colab worker (PR #3A + #3B)
 
 The notebook lives at `colab/sn_video_upscaler_colab_worker.ipynb`.
 Full instructions are in [`colab/README.md`](colab/README.md). TL;DR:
 
 1. Open the notebook in Google Colab.
 2. Runtime → Change runtime type → **GPU** → Save → Connect.
-3. Run the *Setup* cells, then *Start Worker*.
+3. Run the *Setup* cells (1–5), then *6. Start Worker*.
 4. The cell prints a `https://*.trycloudflare.com` URL.
 5. Verify with `curl <url>/health`.
+6. Smoke-test the pipeline with a 3–5 second clip:
+   ```bash
+   curl -F "video=@clip.mp4" -F "preset=fast_2x" <url>/upscale
+   curl <url>/status/<job_id>          # poll until output_ready=true
+   curl -O -J <url>/download/<job_id>  # downloads the upscaled MP4
+   ```
 
 The `.ipynb` is generated from `colab/source/notebook.py`. Re-run
 `python scripts/build_notebook.py` after edits.
