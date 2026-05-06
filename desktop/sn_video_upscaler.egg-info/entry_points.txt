@@ -1,2 +1,0 @@
-[console_scripts]
-sn-video-upscaler = sn_video_upscaler.main:main
