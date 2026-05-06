@@ -98,13 +98,15 @@ if shutil.which("ffmpeg") is None:
 print("FFmpeg:", shutil.which("ffmpeg"))
 
 # Worker dependencies. Plain `uvicorn` (not `uvicorn[standard]`) — uvloop
-# is fragile when combined with `nest_asyncio.apply()` and the Colab event
-# loop, and we don't need its perf for a low-traffic worker.
+# can't be patched by nest_asyncio and we don't need its perf for a
+# low-traffic worker. We also explicitly remove uvloop in case a previous
+# run of this cell (or the runtime image) already installed it; otherwise
+# uvicorn would auto-detect and use it.
+_run([sys.executable, "-m", "pip", "uninstall", "-y", "-q", "uvloop"], check=False)
 _run([
     sys.executable, "-m", "pip", "install", "-q",
     "fastapi==0.115.5",
     "uvicorn==0.32.0",
-    "nest_asyncio==1.6.0",
     "requests==2.32.3",
 ])
 
@@ -210,7 +212,6 @@ import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
-import nest_asyncio
 import requests as _requests
 import uvicorn
 from fastapi import FastAPI
@@ -240,10 +241,6 @@ def health() -> JSONResponse:
             else "No GPU detected. Change Runtime > GPU and re-run setup."
         ),
     })
-
-
-# Allow uvicorn to run alongside Colab's event loop.
-nest_asyncio.apply()
 
 
 def _port_is_free(port: int) -> bool:
@@ -280,6 +277,11 @@ def _serve() -> None:
             port=WORKER_PORT_ACTIVE,
             log_level="warning",
             access_log=False,
+            # Force the stdlib asyncio loop. If `uvloop` is present in the
+            # runtime image, uvicorn would auto-detect and use it, which
+            # would then break `nest_asyncio` (used by other notebook code)
+            # and prevent us from running uvicorn in this background thread.
+            loop="asyncio",
         )
         server = uvicorn.Server(config)
         # Signal handlers can only be installed from the main thread; this
