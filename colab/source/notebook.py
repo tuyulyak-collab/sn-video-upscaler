@@ -264,7 +264,7 @@ for _ in range(40):
         pass
     time.sleep(0.25)
 if not _local_ok:
-    raise RuntimeError("Local worker did not come up on port 8000.")
+    raise RuntimeError(f"Local worker did not come up on port {WORKER_PORT}.")
 
 print(f"Local worker is up on http://127.0.0.1:{WORKER_PORT}")
 
